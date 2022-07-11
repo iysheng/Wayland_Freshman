@@ -194,6 +194,11 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Created surface\n");
 	}
 
+	/* 从 surface 创建一个 shell surface
+	 * 给已经存在的 wl_surface 创建一个 role (shell surface)
+	 * 如果这个 wl_surface 已经有 role 了，那么会报错
+	 * 一个 surface 只能关联一个 shell surface
+	 * */
 	shell_surface = wl_shell_get_shell_surface(shell, surface);
 	if (shell_surface == NULL)
 	{
@@ -204,8 +209,12 @@ int main(int argc, char **argv)
 	{
 		fprintf(stderr, "Created shell surface\n");
 	}
+	/* 将这个 surface 设置为 toplevel surface 
+	 * A toplevel surface is not fullscreen, maximized or transient ???
+	 * */
 	wl_shell_surface_set_toplevel(shell_surface);
-	wl_shell_surface_add_listener(shell_surface,&shell_surface_listener,NULL);
+
+	wl_shell_surface_add_listener(shell_surface, &shell_surface_listener,NULL);
 
 	create_window();
 
