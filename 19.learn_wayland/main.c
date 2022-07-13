@@ -7,10 +7,16 @@
 #include <stdlib.h>
 #include <errno.h>
 #include <sys/mman.h>
+#include "xdg-shell-client-protocol.h"
 
 struct my_output {
     struct wl_compositor * compositor;
     struct wl_shm * shm;
+	struct xdg_wm_base *xdg_wm_base;
+	struct xdg_surface *xdg_surface;
+	struct xdg_toplevel *xdg_toplevel;
+	struct wl_surface *wl_surface;
+	struct wl_buffer *wl_buffer;
 };
 
 
@@ -25,6 +31,16 @@ void test_format(void *data,
 
 struct wl_shm_listener shm_listener = {
     .format = test_format,
+};
+
+static void
+xdg_wm_base_ping(void *data, struct xdg_wm_base *xdg_wm_base, uint32_t serial)
+{
+    xdg_wm_base_pong(xdg_wm_base, serial);
+}
+
+static const struct xdg_wm_base_listener xdg_wm_base_listener = {
+    .ping = xdg_wm_base_ping,
 };
 
 static void registry_handle_global(void *data, struct wl_registry *registry,
@@ -43,6 +59,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
             registry, name, &wl_shm_interface, 1);
 		wl_shm_add_listener(state->shm, &shm_listener, NULL);
 		printf("绑定内存管理器\n");
+	} else if (strcmp(interface, xdg_wm_base_interface.name) == 0) {
+        state->xdg_wm_base = wl_registry_bind(
+            registry, name, &xdg_wm_base_interface, 1);
+		xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener, state);
+		printf("绑定 xdg_wm_base\n");
     }
 }
 
@@ -85,7 +106,7 @@ err:
 static int
 create_shm_file(void)
 {
-#define NAME_TEMPLATE    "/wl_shm-XXXXXX"
+#define NAME_TEMPLATE    "/wl_s1-XXXXXX"
 	char name[64] = {0};
 	const char *path;
 	int fd;
@@ -104,6 +125,7 @@ create_shm_file(void)
     if (fd >= 0) {
         fd = set_cloexec_or_close(fd);
         unlink(name);
+		printf("wow right file 1111111111111111111\n");
 		return fd;
     }
 
@@ -127,6 +149,22 @@ allocate_shm_file(size_t size)
 	return fd;
 }
 
+static void
+xdg_surface_configure(void *data,
+        struct xdg_surface *xdg_surface, uint32_t serial)
+{
+    struct my_output *state = data;
+    xdg_surface_ack_configure(xdg_surface, serial);
+
+    struct wl_buffer *buffer = state->wl_buffer;
+    wl_surface_attach(state->wl_surface, buffer, 0, 0);
+    wl_surface_commit(state->wl_surface);
+}
+
+static const struct xdg_surface_listener xdg_surface_listener = {
+    .configure = xdg_surface_configure,
+};
+
 int
 main(int argc, char *argv[])
 {
@@ -145,12 +183,13 @@ main(int argc, char *argv[])
 	}
 
 	struct wl_registry *registry = wl_display_get_registry(display);
-    const int width = 100, height = 100;
+    const int width = 500, height = 100;
     const int stride = width * 4;
     const int shm_pool_size = height * stride * 2;
     
     struct wl_shm_pool *pool;
     int fd = allocate_shm_file(shm_pool_size);
+	printf("fd=%d\n", fd);
     uint8_t *pool_data = mmap(NULL, shm_pool_size,
         PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	int index = 0;
@@ -165,6 +204,10 @@ main(int argc, char *argv[])
 	if (state.compositor)
 	{
 		surface = wl_compositor_create_surface(state.compositor);
+		state.wl_surface = surface;
+		/* TODO create xdg surface */
+
+		/* TODO create xdg toplevel */
 	}
 
 	if (state.shm)
@@ -182,15 +225,21 @@ main(int argc, char *argv[])
           }
         }
     }
+
 	if (!surface)
 	{
 		printf("invalid surface\n");
 		return -2;
 	}
 
-	wl_surface_attach(surface, buffer, 0, 0);
-    wl_surface_damage(surface, 0, 0, UINT32_MAX, UINT32_MAX);
-    wl_surface_commit(surface);
+    state.wl_buffer = buffer;
+	state.xdg_surface = xdg_wm_base_get_xdg_surface(
+            state.xdg_wm_base, state.wl_surface);
+    xdg_surface_add_listener(state.xdg_surface, &xdg_surface_listener, &state);
+    state.xdg_toplevel = xdg_surface_get_toplevel(state.xdg_surface);
+    xdg_toplevel_set_title(state.xdg_toplevel, "AExample client");
+
+    wl_surface_commit(state.wl_surface);
 	printf("buffer commit is done\n");
 
 	/* 处理接收到的 events */
