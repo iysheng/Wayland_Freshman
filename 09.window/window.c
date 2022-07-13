@@ -285,6 +285,7 @@ int main(int argc, char **argv)
 	/* 全局对象注册表，全局对象需要使用该表获取 */
 	struct wl_registry *registry = wl_display_get_registry(display);
 
+    /* 给 wl_registry 这个 interface 添加了一个 listenser 来监听 events */
 	wl_registry_add_listener(registry, &registry_listener, NULL);
 
 	/* 处理接收到的 events */

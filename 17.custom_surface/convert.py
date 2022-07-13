@@ -24,10 +24,10 @@ for i in range(827):
         G=struct.pack('B', g)
         B=struct.pack('B', b)
         A=struct.pack('B', 0)
-        raw_img_fd.write(A)
-        raw_img_fd.write(R)
-        raw_img_fd.write(G)
         raw_img_fd.write(B)
+        raw_img_fd.write(G)
+        raw_img_fd.write(R)
+        raw_img_fd.write(A)
 
 raw_img_fd.close()
 
