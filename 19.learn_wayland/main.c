@@ -8,6 +8,14 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include "xdg-shell-client-protocol.h"
+#include <xkbcommon/xkbcommon.h>
+#include <assert.h>
+
+struct my_xkb {
+    struct xkb_context *context;
+    struct xkb_keymap *keymap;
+    struct xkb_state *state;
+};
 
 struct my_output {
     struct wl_compositor * compositor;
@@ -22,6 +30,9 @@ struct my_output {
     struct wl_keyboard *wl_keyboard;
     float offset;
     uint32_t last_frame;
+    int32_t width;
+    int32_t height;
+    struct my_xkb xkb;
 };
 
 static int
@@ -104,7 +115,7 @@ static const struct wl_buffer_listener wl_buffer_listener = {
 
 static struct wl_buffer* draw_frame(struct my_output *state)
 {
-	const int width = 100, height = 100;
+	const int width = state->width, height = state->height;
     int stride = width * 4;
     int size = stride * height;
     int offset = state->offset;
@@ -206,6 +217,107 @@ static struct wl_pointer_listener wl_pointer_listener = {
     .button = wl_pointer_button,
 };
 
+static void wl_keyboard_keymap(void *data, struct wl_keyboard *wl_keyboard,
+       uint32_t format,
+       int32_t fd,
+       uint32_t size)
+{
+    struct my_output *state = (struct my_output *)data;
+    char *map_shm = mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
+
+    assert(map_shm != MAP_FAILED);
+    //printf("map share memory for keyboard:%s\n", map_shm);
+    /* 生成 keymap */
+    state->xkb.keymap = xkb_keymap_new_from_string(state->xkb.context, map_shm,
+        XKB_KEYMAP_FORMAT_TEXT_V1, XKB_KEYMAP_COMPILE_NO_FLAGS);
+    munmap(map_shm, size);
+    close(fd);
+    state->xkb.state = xkb_state_new(state->xkb.keymap);
+    /* 这里为什么要执行这个 keymap 和 state 的 unref ???
+     * 取消，之前 xkb 键的映射，以防合成器在运行时候更改键位
+     * */
+    xkb_keymap_unref(state->xkb.keymap);
+    xkb_state_unref(state->xkb.state);
+}
+
+void wl_keyboard_enter(void *data,
+	      struct wl_keyboard *wl_keyboard,
+	      uint32_t serial,
+	      struct wl_surface *surface,
+	      struct wl_array *keys)
+{
+    printf("catch keyboard enter\n");
+    struct my_output *state = (struct my_output *)data;
+    uint32_t *key;
+    wl_array_for_each(key, keys) {
+         char buf[128];
+         xkb_keysym_t sym = xkb_state_key_get_one_sym(
+                         state->xkb.state, *key + 8);
+         xkb_keysym_get_name(sym, buf, sizeof(buf));
+         fprintf(stderr, "sym: %-12s (%d), ", buf, sym);
+         xkb_state_key_get_utf8(state->xkb.state,
+                         *key + 8, buf, sizeof(buf));
+         fprintf(stderr, "utf8: '%s'\n", buf);
+    }
+}
+
+void wl_keyboard_leave(void *data,
+	      struct wl_keyboard *wl_keyboard,
+	      uint32_t serial,
+	      struct wl_surface *surface)
+{
+    printf("catch keyboard leave\n");
+}
+
+void wl_keyboard_key(void *data,
+	    struct wl_keyboard *wl_keyboard,
+	    uint32_t serial,
+	    uint32_t time,
+	    uint32_t key,
+	    uint32_t state)
+{
+    printf("catch keyboard key event\n");
+    struct my_output *my_state = (struct my_output *)data;
+    char buf[128];
+
+    printf("key=%d\n", key);
+    xkb_keysym_t sym = xkb_state_key_get_one_sym(
+                    my_state->xkb.state, key + 8);
+    xkb_keysym_get_name(sym, buf, sizeof(buf));
+    fprintf(stderr, "sym: %-12s (%d), ", buf, sym);
+    xkb_state_key_get_utf8(my_state->xkb.state,
+                    key + 8, buf, sizeof(buf));
+    fprintf(stderr, "utf8: '%s'\n", buf);
+}
+
+void wl_keyboard_modifiers(void *data,
+		  struct wl_keyboard *wl_keyboard,
+		  uint32_t serial,
+		  uint32_t mods_depressed,
+		  uint32_t mods_latched,
+		  uint32_t mods_locked,
+		  uint32_t group)
+{
+    printf("catch keyboard modifiers event\n");
+}
+
+void wl_keyboard_repeat_info(void *data,
+		    struct wl_keyboard *wl_keyboard,
+		    int32_t rate,
+		    int32_t delay)
+{
+    printf("catch keyboard repeat_info event\n");
+}
+
+static struct wl_keyboard_listener wl_keyboard_listener = {
+    .keymap = wl_keyboard_keymap,
+    .enter = wl_keyboard_enter,
+    .leave = wl_keyboard_leave,
+    .key = wl_keyboard_key,
+    .modifiers = wl_keyboard_modifiers,
+    .repeat_info = wl_keyboard_repeat_info,
+};
+
 static void wl_seat_capabilities(void *data,
 		     struct wl_seat *wl_seat,
 		     uint32_t capabilities)
@@ -216,6 +328,7 @@ static void wl_seat_capabilities(void *data,
     {
         printf("Wow it's support keyboard\n");
         state->wl_keyboard = wl_seat_get_keyboard(wl_seat);
+        wl_keyboard_add_listener(state->wl_keyboard, &wl_keyboard_listener, state);
     }
 
     if (capabilities & WL_SEAT_CAPABILITY_POINTER)
@@ -333,6 +446,33 @@ static const struct wl_callback_listener wl_surface_frame_listener = {
     .done = wl_surface_frame_done,
 };
 
+void xdg_toplevel_configure(void *data,
+		  struct xdg_toplevel *xdg_toplevel,
+		  int32_t width,
+		  int32_t height,
+		  struct wl_array *states)
+{
+    struct my_output * state =  (struct my_output *)data;
+    if (width == 0 || height == 0)
+    {
+        printf("Oh no zero return\n");
+        return;
+    }
+
+    state->width = width;
+    state->height = height;
+}
+
+void xdg_toplevel_close(void *data,
+	      struct xdg_toplevel *xdg_toplevel)
+{
+}
+
+static struct xdg_toplevel_listener xdg_toplevel_listener = {
+    .configure = xdg_toplevel_configure,
+    .close = xdg_toplevel_close,
+};
+
 int
 main(int argc, char *argv[])
 {
@@ -340,6 +480,8 @@ main(int argc, char *argv[])
     struct my_output state = {0};
 	struct wl_surface *surface = NULL;
 
+    state.width = 100;
+    state.height = 200;
 	if (display)
 	{
 		printf("Create connection success\n");
@@ -351,6 +493,7 @@ main(int argc, char *argv[])
 	}
 
 	struct wl_registry *registry = wl_display_get_registry(display);
+    state.xkb.context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
 	wl_registry_add_listener(registry, &registry_listener, &state);
 	wl_display_roundtrip(display);
 
@@ -373,11 +516,12 @@ main(int argc, char *argv[])
 		return -2;
 	}
 
-	state.xdg_surface = xdg_wm_base_get_xdg_surface(
-            state.xdg_wm_base, state.wl_surface);
+	state.xdg_surface = xdg_wm_base_get_xdg_surface(state.xdg_wm_base, state.wl_surface);
     xdg_surface_add_listener(state.xdg_surface, &xdg_surface_listener, &state);
     state.xdg_toplevel = xdg_surface_get_toplevel(state.xdg_surface);
     xdg_toplevel_set_title(state.xdg_toplevel, "AExample client");
+    xdg_toplevel_add_listener(state.xdg_toplevel, &xdg_toplevel_listener, &state);
+    //xdg_toplevel_set_fullscreen(state.xdg_toplevel, state.wl);
 
     wl_surface_commit(state.wl_surface);
 	printf("buffer commit is done\n");
