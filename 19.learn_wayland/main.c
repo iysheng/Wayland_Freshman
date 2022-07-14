@@ -17,6 +17,9 @@ struct my_output {
 	struct xdg_toplevel *xdg_toplevel;
 	struct wl_surface *wl_surface;
 	struct wl_buffer *wl_buffer;
+    struct wl_seat *wl_seat;
+    struct wl_pointer *wl_pointer;
+    struct wl_keyboard *wl_keyboard;
     float offset;
     uint32_t last_frame;
 };
@@ -58,7 +61,7 @@ create_shm_file(void)
 		strcpy(name, path);
 	}
 	strcat(name, NAME_TEMPLATE);
-	printf("name=%s\n", name);
+	//printf("name=%s\n", name);
 
 	/* 根据模板创建临时文件句柄 */
 	fd = mkstemp(name);
@@ -161,6 +164,85 @@ static const struct xdg_wm_base_listener xdg_wm_base_listener = {
     .ping = xdg_wm_base_ping,
 };
 
+static void wl_pointer_enter(void *data,
+	      struct wl_pointer *wl_pointer,
+	      uint32_t serial,
+	      struct wl_surface *surface,
+	      wl_fixed_t surface_x,
+	      wl_fixed_t surface_y)
+{
+    printf("catch wl pointer enter event,(%f,%f) serial:%d\n", wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y), serial);
+}
+
+static void wl_pointer_leave(void *data,
+	      struct wl_pointer *wl_pointer,
+	      uint32_t serial,
+	      struct wl_surface *surface)
+{
+}
+
+static void wl_pointer_motion(void *data,
+	       struct wl_pointer *wl_pointer,
+	       uint32_t time,
+	       wl_fixed_t surface_x,
+	       wl_fixed_t surface_y)
+{
+}
+
+static void wl_pointer_button(void *data,
+	       struct wl_pointer *wl_pointer,
+	       uint32_t serial,
+	       uint32_t time,
+	       uint32_t button,
+	       uint32_t state)
+{
+    printf("catch button event:%d\n", button);
+}
+
+static struct wl_pointer_listener wl_pointer_listener = {
+    .enter = wl_pointer_enter,
+    .leave = wl_pointer_leave,
+    .motion = wl_pointer_motion,
+    .button = wl_pointer_button,
+};
+
+static void wl_seat_capabilities(void *data,
+		     struct wl_seat *wl_seat,
+		     uint32_t capabilities)
+{
+    struct my_output *state = (struct my_output *)data;
+    printf("wl_seat capabilities=%x\n", capabilities);
+    if (capabilities & WL_SEAT_CAPABILITY_KEYBOARD)
+    {
+        printf("Wow it's support keyboard\n");
+        state->wl_keyboard = wl_seat_get_keyboard(wl_seat);
+    }
+
+    if (capabilities & WL_SEAT_CAPABILITY_POINTER)
+    {
+        printf("Wow it's support pointer\n");
+        state->wl_pointer = wl_seat_get_pointer(wl_seat);
+        wl_pointer_add_listener(state->wl_pointer, &wl_pointer_listener, state);
+    }
+
+    if (capabilities & WL_SEAT_CAPABILITY_TOUCH)
+    {
+        printf("Wow it's support touch board\n");
+    }
+}
+
+static void wl_seat_name(void *data,
+	     struct wl_seat *wl_seat,
+	     const char *name)
+{
+    printf("wl_seat name=%s\n", name);
+}
+
+static const struct wl_seat_listener wl_seat_listener = {
+    .capabilities = wl_seat_capabilities,
+    .name = wl_seat_name,
+};
+
 static void registry_handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version)
 {
@@ -182,6 +264,11 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
             registry, name, &xdg_wm_base_interface, 1);
 		xdg_wm_base_add_listener(state->xdg_wm_base, &xdg_wm_base_listener, state);
 		printf("绑定 xdg_wm_base\n");
+	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
+        state->wl_seat = wl_registry_bind(
+            registry, name, &wl_seat_interface, 1);
+		wl_seat_add_listener(state->wl_seat, &wl_seat_listener, state);
+		printf("绑定 wl_seat\n");
     }
 }
 
