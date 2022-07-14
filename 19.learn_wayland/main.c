@@ -397,11 +397,60 @@ void zwp_text_input_v1_text_direction(void *data,
 {
 }
 
+void zwp_text_input_v1_preedit_string(void *data,
+		       struct zwp_text_input_v1 *zwp_text_input_v1,
+		       uint32_t serial,
+		       const char *text,
+		       const char *commit)
+{
+    printf("text:%s commint:%s\n", text, commit);
+}
+
+void zwp_text_input_v1_commit_string(void *data,
+		      struct zwp_text_input_v1 *zwp_text_input_v1,
+		      uint32_t serial,
+		      const char *text)
+{
+
+}
+
+void zwp_text_input_v1_cursor_position(void *data,
+			struct zwp_text_input_v1 *zwp_text_input_v1,
+			int32_t index,
+			int32_t anchor)
+{
+	printf("cursor_position event\n");
+}
+
+void zwp_text_input_v1_keysym(void *data,
+	       struct zwp_text_input_v1 *zwp_text_input_v1,
+	       uint32_t serial,
+	       uint32_t time,
+	       uint32_t sym,
+	       uint32_t state,
+	       uint32_t modifiers)
+{
+
+}
+
+void zwp_text_input_v1_delete_surrounding_text(void *data,
+				struct zwp_text_input_v1 *zwp_text_input_v1,
+				int32_t index,
+				uint32_t length)
+{
+
+}
+
 static struct zwp_text_input_v1_listener zwp_text_input_v1_listener = {
     .enter = zwp_text_input_v1_enter,
     .modifiers_map = zwp_text_input_v1_modifiers_map,
+    .preedit_string = zwp_text_input_v1_preedit_string,
     .preedit_styling = zwp_text_input_v1_preedit_styling,
     .preedit_cursor = zwp_text_input_v1_preedit_cursor,
+    .commit_string = zwp_text_input_v1_commit_string,
+	.cursor_position = zwp_text_input_v1_cursor_position,
+	.keysym = zwp_text_input_v1_keysym,
+	.delete_surrounding_text = zwp_text_input_v1_delete_surrounding_text,
     .language = zwp_text_input_v1_language,
     .text_direction = zwp_text_input_v1_text_direction,
 };
