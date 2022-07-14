@@ -8,6 +8,7 @@
 #include <errno.h>
 #include <sys/mman.h>
 #include "xdg-shell-client-protocol.h"
+#include "text-input-unstable-v1-client-protocol.h"
 #include <xkbcommon/xkbcommon.h>
 #include <assert.h>
 
@@ -33,6 +34,8 @@ struct my_output {
     int32_t width;
     int32_t height;
     struct my_xkb xkb;
+    struct zwp_text_input_manager_v1 *zwp_text_input_manager_v1;
+    struct zwp_text_input_v1 *text_input;
 };
 
 static int
@@ -115,7 +118,7 @@ static const struct wl_buffer_listener wl_buffer_listener = {
 
 static struct wl_buffer* draw_frame(struct my_output *state)
 {
-	const int width = state->width, height = state->height;
+    const int width = state->width, height = state->height;
     int stride = width * 4;
     int size = stride * height;
     int offset = state->offset;
@@ -351,6 +354,58 @@ static void wl_seat_name(void *data,
     printf("wl_seat name=%s\n", name);
 }
 
+void zwp_text_input_v1_enter(void *data,
+	      struct zwp_text_input_v1 *zwp_text_input_v1,
+	      struct wl_surface *surface)
+{
+}
+
+void zwp_text_input_v1_modifiers_map(void *data,
+		      struct zwp_text_input_v1 *zwp_text_input_v1,
+		      struct wl_array *map)
+{
+}
+
+void zwp_text_input_v1_preedit_cursor(void *data,
+		       struct zwp_text_input_v1 *zwp_text_input_v1,
+		       int32_t index)
+{
+
+}
+
+void zwp_text_input_v1_preedit_styling(void *data,
+			struct zwp_text_input_v1 *zwp_text_input_v1,
+			uint32_t index,
+			uint32_t length,
+			uint32_t style)
+{
+
+}
+
+void zwp_text_input_v1_language(void *data,
+		 struct zwp_text_input_v1 *zwp_text_input_v1,
+		 uint32_t serial,
+		 const char *language)
+{
+
+}
+
+void zwp_text_input_v1_text_direction(void *data,
+		       struct zwp_text_input_v1 *zwp_text_input_v1,
+		       uint32_t serial,
+		       uint32_t direction)
+{
+}
+
+static struct zwp_text_input_v1_listener zwp_text_input_v1_listener = {
+    .enter = zwp_text_input_v1_enter,
+    .modifiers_map = zwp_text_input_v1_modifiers_map,
+    .preedit_styling = zwp_text_input_v1_preedit_styling,
+    .preedit_cursor = zwp_text_input_v1_preedit_cursor,
+    .language = zwp_text_input_v1_language,
+    .text_direction = zwp_text_input_v1_text_direction,
+};
+
 static const struct wl_seat_listener wl_seat_listener = {
     .capabilities = wl_seat_capabilities,
     .name = wl_seat_name,
@@ -382,6 +437,12 @@ static void registry_handle_global(void *data, struct wl_registry *registry,
             registry, name, &wl_seat_interface, 1);
 		wl_seat_add_listener(state->wl_seat, &wl_seat_listener, state);
 		printf("绑定 wl_seat\n");
+	} else if (strcmp(interface, zwp_text_input_manager_v1_interface.name) == 0) {
+        state->zwp_text_input_manager_v1 = wl_registry_bind(
+            registry, name, &zwp_text_input_manager_v1_interface, 1);
+        state->text_input = zwp_text_input_manager_v1_create_text_input(state->zwp_text_input_manager_v1);
+        zwp_text_input_v1_add_listener(state->text_input, &zwp_text_input_v1_listener, state);
+        printf("绑定 zwp_text_input_v1\n");
     }
 }
 
@@ -430,7 +491,8 @@ wl_surface_frame_done(void *data, struct wl_callback *cb, uint32_t time)
 	/* Update scroll amount at 24 pixels per second */
 	if (state->last_frame != 0) {
 		int elapsed = time - state->last_frame;
-		state->offset += elapsed / 1000.0 * 24;
+		//state->offset += elapsed / 1000.0 * 24;
+		state->offset += 0; //elapsed / 1000.0 * 24;
 	}
 
 	/* Submit a frame for this event */
@@ -480,8 +542,8 @@ main(int argc, char *argv[])
     struct my_output state = {0};
 	struct wl_surface *surface = NULL;
 
-    state.width = 100;
-    state.height = 200;
+    state.width = 900;
+    state.height = 900;
 	if (display)
 	{
 		printf("Create connection success\n");
@@ -529,6 +591,9 @@ main(int argc, char *argv[])
     struct wl_callback *cb = wl_surface_frame(state.wl_surface);
 	wl_callback_add_listener(cb, &wl_surface_frame_listener, &state);
 
+    zwp_text_input_v1_show_input_panel(state.text_input);
+    zwp_text_input_v1_activate(state.text_input, state.wl_seat, state.wl_surface);
+    printf("show keyboard virtual\n");
 	/* 处理接收到的 events */
 	while (-1 != wl_display_dispatch(display))
 	{
